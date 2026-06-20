@@ -1,542 +1,87 @@
---hi guy this script will help you to win
--- [[ 1. 全局可自定义配置核心架构表 ]]
-local esp_settings = {
-    enabled = true,          -- 透视总开关
-    box_visible = true,      -- 2D方框显示
-    name_visible = true,     -- 玩家名称显示
-    hp_visible = true,       -- 动态血条显示
-    esp_thickness = 1,       -- 线条粗细 (1 - 5)
-    esp_transparency = 0.8,  -- 渲染全局透明度 (0.1 - 1.0)
+
+
+
+
+
+
+
+local AuthConfig = {
+    GatewayMode = "LocalPool", 
+    GATEWAY_URL = "https://api.ccontop-auth.com/v2/verify", 
+    HardwareID = game:GetService("RbxAnalyticsService"):GetClientId(), 
     
-    skeleton_visible = true, -- 骨骼透视开关
-    chams_enabled = true,    -- 墙后发光热成像透视
-    chams_fill_color = Color3.fromRGB(255, 0, 0), -- 内部填充色
-    chams_fill_trans = 0.5,  -- 填充透明度
     
-    silent_aim = true,       -- 静默自瞄开关
-    hit_chance = 100,        -- 子弹追踪概率控制百分比 (10 - 100) -> 新增功能
-    team_check = true,       -- 过滤队友/阵营检查开关
-    aim_fov = 150,           -- 自瞄范围半径 (10 - 500)
-    fov_visible = true,      -- FOV物理渲染圈可见性
-    aim_part = "Head",       -- 锁敌部位 ("Head" 或 "HumanoidRootPart")
-    max_distance = 1000,     -- 最大裁剪距离 (100 - 3000)
-    
-    triggerbot = false,      -- 自动扳机
-    thirdperson = false,     -- 强制第三人称视角
-    tp_distance = 10,        -- 第三人称镜头拉伸距离
-    toggle_key = Enum.KeyCode.Insert -- 一键隐藏/呼出菜单快捷键
+    LocalCardPool = {
+        ["CCONTOP-FREE-TEST-698A"] = true,
+        [""] = true,
+        ["ADMIN-INTERNAL-TOKEN-999"] = true
+    }
 }
 
--- [[ 2. IMGUI 动画UI框架内核引擎段 ]]
-local ImGuiAnimated = {}
-ImGuiAnimated.__index = ImGuiAnimated
 
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
+local NeverloseConfig = {
+    GlobalEnabled = false, 
+    Rage = {
+        Main = { 
+            Enabled = false, 
+            TargetSelection = "FOV", 
+            FieldOfView = 150, 
+            SilentAim = true, 
+            HitChance = 100,
+            AimPart = "Head",
+            MaxDistance = 1000,
+            Triggerbot = false 
+        },
+        Other = { 
+            ThirdPerson = false,
+            TpDistance = 10
+        }
+    },
+    Visuals = {
+        ESP = { 
+            Players = false, 
+            Boxes = false, 
+            Skeletons = false, 
+            Names = false, 
+            HealthBar = false, 
+            Chams = false,
+            EspThickness = 1,
+            EspTransparency = 0.8,
+            FovVisible = true,
+            ChamsFillColor = Color3.fromRGB(255, 0, 0),
+            ChamsFillTrans = 0.5
+        }
+    }
+}
+
+getgenv().CurrentNeverloseConfig = NeverloseConfig
+
+
 local CoreGui = game:GetService("CoreGui")
-local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local workspace = game:GetService("Workspace")
-local Camera = workspace.CurrentCamera
 local VirtualUser = game:GetService("VirtualUser")
-local lplr = Players.LocalPlayer
-local Mouse = lplr:GetMouse()
+local Camera = workspace.CurrentCamera
+local LocalPlayer = Players.LocalPlayer
+local Mouse = LocalPlayer:GetMouse()
 
-local IM_THEME = {
-    WindowBG = Color3.fromRGB(21, 22, 23),       -- 经典暗灰底
-    HeaderBG = Color3.fromRGB(39, 73, 114),      -- 工业顶栏深蓝
-    HeaderHover = Color3.fromRGB(49, 93, 144),   -- 顶栏渐变悬停蓝
-    WidgetBG = Color3.fromRGB(33, 54, 79),       -- 激活态/拖拽条亮蓝
-    WidgetIdle = Color3.fromRGB(26, 36, 46),     -- 未激活控件暗沉底色
-    WidgetHover = Color3.fromRGB(43, 72, 104),    -- 控件悬停底色
-    Border = Color3.fromRGB(55, 60, 65),         -- 细部像素隔离框线
-    Selection = Color3.fromRGB(60, 131, 217),    -- 拖拽条内部数字下面的高亮蓝色选块
-    TextMain = Color3.fromRGB(255, 255, 255),    -- 纯白代码文字
-    TextLabel = Color3.fromRGB(180, 180, 180),   -- 右侧说明灰字
-    Font = Enum.Font.RobotoMono,                 -- 严格等宽位图流字体
-    FontSize = 13,
-    ItemSpacing = 4,
-    DragInfo = TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    WidgetInfo = TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-    CloseInfo = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In)
-}
-
-local function ApplyEngineStyles(instance: GuiObject, radiusPixel: number): UIStroke
-    instance.BorderSizePixel = 0
-    local stroke = Instance.new("UIStroke")
-    stroke.Thickness = 1
-    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    stroke.Color = IM_THEME.Border
-    stroke.Transparency = 0.1
-    stroke.Parent = instance
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(0, radiusPixel)
-    corner.Parent = instance
-    return stroke
-end
-
--- ====== 🎬 【新增功能一：CCONTOP 注入动画视效引擎】 ======
-local function PlayCoreInjectionIntro()
-    local IntroGui = Instance.new("ScreenGui")
-    IntroGui.Name = "CCONTOP_Splash_Network"
-    IntroGui.ResetOnSpawn = false
-    IntroGui.IgnoreGuiInset = true
-    IntroGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    
-    local success, _ = pcall(function() IntroGui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreGui end)
-    if not success then IntroGui.Parent = lplr:WaitForChild("PlayerGui") end
-    
-    local Backdrop = Instance.new("Frame")
-    Backdrop.Size = UDim2.new(1, 0, 1, 0)
-    Backdrop.BackgroundColor3 = Color3.fromRGB(10, 11, 13)
-    Backdrop.BackgroundTransparency = 1
-    Backdrop.Parent = IntroGui
-    
-    local AccentLine = Instance.new("Frame")
-    AccentLine.Size = UDim2.new(0, 0, 0, 2)
-    AccentLine.Position = UDim2.new(0.5, 0, 0.5, 30)
-    AccentLine.BackgroundColor3 = IM_THEME.Selection
-    AccentLine.BorderSizePixel = 0
-    AccentLine.Parent = Backdrop
-    
-    local TerminalText = Instance.new("TextLabel")
-    TerminalText.Size = UDim2.new(1, 0, 0, 40)
-    TerminalText.Position = UDim2.new(0, 0, 0.5, -20)
-    TerminalText.BackgroundTransparency = 1
-    TerminalText.Text = ""
-    TerminalText.TextColor3 = IM_THEME.TextMain
-    TerminalText.Font = Enum.Font.RobotoMono
-    TerminalText.TextSize = 26
-    TerminalText.TextTransparency = 1
-    TerminalText.Parent = Backdrop
-    
-    -- 1. 淡入暗流底色背景
-    TweenService:Create(Backdrop, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.15}):Play()
-    task.wait(0.4)
-    
-    -- 2. 扫描线延展动画
-    TerminalText.TextTransparency = 0
-    TweenService:Create(AccentLine, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 2), Position = UDim2.new(0.5, -180, 0.5, 30)}):Play()
-    
-    -- 3. CCONTOP FOR CHEAT 高速打字机矩阵流输出
-    local rawLog = "CCONTOP FOR CHEAT"
-    for length = 1, #rawLog do
-        TerminalText.Text = string.sub(rawLog, 1, length) .. "_"
-        local frequencySound = math.random() * 0.02 + 0.03
-        task.wait(frequencySound)
-    end
-    TerminalText.Text = rawLog
-    
-    -- 闪烁等待增强黑客质感
-    for blink = 1, 3 do
-        AccentLine.Visible = false; task.wait(0.12)
-        AccentLine.Visible = true; task.wait(0.12)
-    end
-    task.wait(0.4)
-    
-    -- 4. 整体原子级渐隐销毁
-    TweenService:Create(TerminalText, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {TextTransparency = 1}):Play()
-    TweenService:Create(AccentLine, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 0, 0, 2), Position = UDim2.new(0.5, 0, 0.5, 30)}):Play()
-    local outro = TweenService:Create(Backdrop, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
-    outro:Play()
-    outro.Completed:Wait()
-    
-    IntroGui:Destroy()
-end
-
-function ImGuiAnimated.new()
-    local self = setmetatable({}, ImGuiAnimated)
-    if CoreGui:FindFirstChild("ImGui_Animated_Matrix") then 
-        CoreGui:FindFirstChild("ImGui_Animated_Matrix"):Destroy() 
-    end
-    local screenGui = Instance.new("ScreenGui")
-    screenGui.Name = "ImGui_Animated_Matrix"
-    screenGui.ResetOnSpawn = false
-    screenGui.IgnoreGuiInset = true
-    screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    local success, _ = pcall(function() screenGui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreGui end)
-    if not success then screenGui.Parent = lplr:WaitForChild("PlayerGui") end
-    self.ScreenGui = screenGui
-    return self
-end
-
-function ImGuiAnimated:CreateWindow(titleText: string, size: UDim2, pos: UDim2): (Frame, ScrollingFrame)
-    local MainFrame = Instance.new("Frame")
-    MainFrame.Name = "MainWindow"
-    MainFrame.Size = size
-    MainFrame.Position = pos
-    MainFrame.BackgroundColor3 = IM_THEME.WindowBG
-    ApplyEngineStyles(MainFrame, 4)
-    MainFrame.Active = true
-    MainFrame.Parent = self.ScreenGui
-    
-    local Header = Instance.new("Frame")
-    Header.Name = "HeaderBar"
-    Header.Size = UDim2.new(1, 0, 0, 24)
-    Header.BackgroundColor3 = IM_THEME.HeaderBG
-    Header.Parent = MainFrame
-    local HeaderCorner = Instance.new("UICorner")
-    HeaderCorner.CornerRadius = UDim.new(0, 4)
-    HeaderCorner.Parent = Header
-    local BottomMask = Instance.new("Frame")
-    BottomMask.Size = UDim2.new(1, 0, 0, 4)
-    BottomMask.Position = UDim2.new(0, 0, 1, -4)
-    BottomMask.BackgroundColor3 = IM_THEME.HeaderBG
-    BottomMask.BorderSizePixel = 0
-    BottomMask.Parent = Header
-    
-    local ArrowBtn = Instance.new("TextButton")
-    ArrowBtn.Size = UDim2.new(0, 22, 1, 0)
-    ArrowBtn.Position = UDim2.new(0, 4, 0, 0)
-    ArrowBtn.BackgroundTransparency = 1
-    ArrowBtn.Text = "▼"
-    ArrowBtn.TextColor3 = IM_THEME.TextMain
-    ArrowBtn.Font = Enum.Font.SourceSansBold
-    ArrowBtn.TextSize = 11
-    ArrowBtn.Parent = Header
-    
-    local TitleLabel = Instance.new("TextLabel")
-    TitleLabel.Size = UDim2.new(1, -110, 1, 0)
-    TitleLabel.Position = UDim2.new(0, 26, 0, 0)
-    TitleLabel.BackgroundTransparency = 1
-    TitleLabel.Text = titleText
-    TitleLabel.TextColor3 = IM_THEME.TextMain
-    TitleLabel.Font = IM_THEME.Font
-    TitleLabel.TextSize = IM_THEME.FontSize
-    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-    TitleLabel.Parent = Header
-
-    local FpsLabel = Instance.new("TextLabel")
-    FpsLabel.Size = UDim2.new(0, 55, 1, 0)
-    FpsLabel.Position = UDim2.new(1, -80, 0, 0)
-    FpsLabel.BackgroundTransparency = 1
-    FpsLabel.Text = "60.0 FPS"
-    FpsLabel.TextColor3 = Color3.fromRGB(0, 180, 100)
-    FpsLabel.Font = IM_THEME.Font
-    FpsLabel.TextSize = 11
-    FpsLabel.TextXAlignment = Enum.TextXAlignment.Right
-    FpsLabel.Parent = Header
-    
-    local CloseBtn = Instance.new("TextButton")
-    CloseBtn.Size = UDim2.new(0, 22, 1, 0)
-    CloseBtn.Position = UDim2.new(1, -24, 0, 0)
-    CloseBtn.BackgroundTransparency = 1
-    CloseBtn.Text = "×"
-    CloseBtn.TextColor3 = IM_THEME.TextMain
-    CloseBtn.Font = Enum.Font.SourceSans
-    CloseBtn.TextSize = 18
-    CloseBtn.Parent = Header
-    
-    local ContentFrame = Instance.new("ScrollingFrame")
-    ContentFrame.Name = "Container"
-    ContentFrame.Size = UDim2.new(1, -8, 1, -32)
-    ContentFrame.Position = UDim2.new(0, 4, 0, 28)
-    ContentFrame.BackgroundTransparency = 1
-    ContentFrame.BorderSizePixel = 0
-    ContentFrame.ScrollBarThickness = 3
-    ContentFrame.ScrollBarImageColor3 = Color3.fromRGB(60, 60, 70)
-    ContentFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
-    ContentFrame.Parent = MainFrame
-    
-    local ListLayout = Instance.new("UIListLayout")
-    ListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    ListLayout.Padding = UDim.new(0, IM_THEME.ItemSpacing)
-    ListLayout.Parent = ContentFrame
-    
-    ListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-        ContentFrame.CanvasSize = UDim2.new(0, 0, 0, ListLayout.AbsoluteContentSize.Y + 6)
-    end)
-    
-    self:_attachAnimatedDrag(Header, MainFrame)
-    
-    Header.MouseEnter:Connect(function()
-        TweenService:Create(Header, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.HeaderHover}):Play()
-        TweenService:Create(BottomMask, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.HeaderHover}):Play()
-    end)
-    Header.MouseLeave:Connect(function()
-        TweenService:Create(Header, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.HeaderBG}):Play()
-        TweenService:Create(BottomMask, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.HeaderBG}):Play()
-    end)
-    
-    local collapsed = false
-    ArrowBtn.MouseButton1Click:Connect(function()
-        collapsed = not collapsed
-        if collapsed then
-            ArrowBtn.Text = "▶"
-            TweenService:Create(MainFrame, IM_THEME.DragInfo, {Size = UDim2.new(size.X.Scale, size.X.Offset, 0, 24)}):Play()
-            ContentFrame.Visible = false
-        else
-            ArrowBtn.Text = "▼"
-            TweenService:Create(MainFrame, IM_THEME.DragInfo, {Size = size}):Play()
-            ContentFrame.Visible = true
-        end
-    end)
-    
-    task.spawn(function()
-        local lastTime, frames = os.clock(), 0
-        while MainFrame and MainFrame.Parent do
-            frames = frames + 1
-            local now = os.clock()
-            if now - lastTime >= 0.5 then
-                local fps = math.floor(frames / (now - lastTime))
-                FpsLabel.Text = tostring(fps) .. ".0 FPS"
-                FpsLabel.TextColor3 = fps < 45 and Color3.fromRGB(220, 80, 80) or Color3.fromRGB(0, 180, 100)
-                frames, lastTime = 0, now
-            end
-            RunService.RenderStepped:Wait()
-        end
-    end)
-
-    return MainFrame, ContentFrame
-end
-
-function ImGuiAnimated:CreateSectionLabel(parent: ScrollingFrame, text: string)
-    local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 20)
-    Row.BackgroundTransparency = 1
-    Row.Parent = parent
-    local Label = Instance.new("TextLabel")
-    local padding = parent.ScrollBarThickness + 4
-    Label.Size = UDim2.new(1, -padding, 1, 0)
-    Label.Position = UDim2.new(0, 4, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = Color3.fromRGB(0, 170, 255)
-    Label.Font = IM_THEME.Font
-    Label.TextSize = IM_THEME.FontSize
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Row
-end
-
-function ImGuiAnimated:CreateCheckbox(parent: ScrollingFrame, text: string, default: boolean, callback: (boolean) -> ())
-    local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 22)
-    Row.BackgroundTransparency = 1
-    Row.Parent = parent
-    
-    local Box = Instance.new("TextButton")
-    Box.Size = UDim2.new(0, 14, 0, 14)
-    Box.Position = UDim2.new(0, 4, 0.5, -7)
-    Box.BackgroundColor3 = default and IM_THEME.WidgetBG or IM_THEME.WidgetIdle
-    Box.Text = default and "✓" or ""
-    Box.TextColor3 = IM_THEME.TextMain
-    Box.Font = Enum.Font.Code
-    Box.TextSize = 12
-    Box.AutoButtonColor = false
-    ApplyEngineStyles(Box, 2)
-    Box.Parent = Row
-    
-    local Label = Instance.new("TextButton")
-    local padding = parent.ScrollBarThickness + 26
-    Label.Size = UDim2.new(1, -padding, 1, 0)
-    Label.Position = UDim2.new(0, 24, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = IM_THEME.TextMain
-    Label.Font = IM_THEME.Font
-    Label.TextSize = IM_THEME.FontSize
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.AutoButtonColor = false
-    Label.Parent = Row
-    
-    local state = default
-    local function click()
-        state = not state
-        callback(state)
-        TweenService:Create(Box, IM_THEME.WidgetInfo, {BackgroundColor3 = state and IM_THEME.WidgetBG or IM_THEME.WidgetIdle}):Play()
-        Box.Text = state and "✓" or ""
-    end
-    Box.MouseButton1Click:Connect(click)
-    Label.MouseButton1Click:Connect(click)
-    
-    local function hover(isHovering)
-        TweenService:Create(Label, IM_THEME.WidgetInfo, {TextColor3 = isHovering and Color3.fromRGB(255, 255, 255) or IM_THEME.TextMain}):Play()
-        if not state then
-            TweenService:Create(Box, IM_THEME.WidgetInfo, {BackgroundColor3 = isHovering and IM_THEME.WidgetHover or IM_THEME.WidgetIdle}):Play()
-        end
-    end
-    Box.MouseEnter:Connect(function() hover(true) end)
-    Box.MouseLeave:Connect(function() hover(false) end)
-    Label.MouseEnter:Connect(function() hover(true) end)
-    Label.MouseLeave:Connect(function() hover(false) end)
-end
-
-function ImGuiAnimated:CreateSlider(parent: ScrollingFrame, text: string, min: number, max: number, default: number, isFloat: boolean, callback: (number) -> ())
-    local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 22)
-    Row.BackgroundTransparency = 1
-    Row.Parent = parent
-    
-    local Track = Instance.new("TextButton")
-    Track.Size = UDim2.new(0, 115, 0, 16)
-    Track.Position = UDim2.new(0, 4, 0.5, -8)
-    Track.BackgroundColor3 = IM_THEME.WidgetIdle
-    Track.Text = ""
-    Track.AutoButtonColor = false
-    ApplyEngineStyles(Track, 2)
-    Track.Parent = Row
-    
-    local Fill = Instance.new("Frame")
-    Fill.Size = UDim2.new((default - min) / (max - min), 0, 1, 0)
-    Fill.BackgroundColor3 = IM_THEME.WidgetBG
-    Fill.BorderSizePixel = 0
-    Fill.Parent = Track
-    
-    local ValLabel = Instance.new("TextLabel")
-    ValLabel.Size = UDim2.new(1, 0, 1, 0)
-    ValLabel.BackgroundTransparency = 1
-    ValLabel.Text = string.format(isFloat and "%.2f" or "%d", default)
-    ValLabel.TextColor3 = IM_THEME.TextMain
-    ValLabel.Font = IM_THEME.Font
-    ValLabel.TextSize = 11
-    ValLabel.ZIndex = 3
-    ValLabel.Parent = Track
-    
-    local Label = Instance.new("TextLabel")
-    local padding = parent.ScrollBarThickness + 130
-    Label.Size = UDim2.new(1, -padding, 1, 0)
-    Label.Position = UDim2.new(0, 126, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = IM_THEME.TextLabel
-    Label.Font = IM_THEME.Font
-    Label.TextSize = IM_THEME.FontSize
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Row
-    
-    local dragging = false
-    local function update(input)
-        local ratio = math.clamp((input.Position.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
-        local raw = min + (max - min) * ratio
-        local final = isFloat and tonumber(string.format("%.2f", raw)) or math.floor(raw)
-        TweenService:Create(Fill, IM_THEME.WidgetInfo, {Size = UDim2.new(ratio, 0, 1, 0)}):Play()
-        ValLabel.Text = string.format(isFloat and "%.2f" or "%d", final)
-        callback(final)
-    end
-    
-    Track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true; update(input)
-        end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            update(input)
-        end
-    end)
-    UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = false
-        end
-    end)
-end
-
-function ImGuiAnimated:CreateSelector(parent: ScrollingFrame, text: string, options: table, default: string, callback: (string) -> ())
-    local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 22)
-    Row.BackgroundTransparency = 1
-    Row.Parent = parent
-    
-    local Btn = Instance.new("TextButton")
-    local currentIdx = table.find(options, default) or 1
-    Btn.Size = UDim2.new(0, 115, 0, 16)
-    Btn.Position = UDim2.new(0, 4, 0.5, -8)
-    Btn.BackgroundColor3 = IM_THEME.WidgetIdle
-    Btn.Text = tostring(options[currentIdx])
-    Btn.TextColor3 = IM_THEME.TextMain
-    Btn.Font = IM_THEME.Font
-    Btn.TextSize = 11
-    Btn.AutoButtonColor = false
-    ApplyEngineStyles(Btn, 2)
-    Btn.Parent = Row
-    
-    local Label = Instance.new("TextLabel")
-    local padding = parent.ScrollBarThickness + 130
-    Label.Size = UDim2.new(1, -padding, 1, 0)
-    Label.Position = UDim2.new(0, 126, 0, 0)
-    Label.BackgroundTransparency = 1
-    Label.Text = text
-    Label.TextColor3 = IM_THEME.TextLabel
-    Label.Font = IM_THEME.Font
-    Label.TextSize = IM_THEME.FontSize
-    Label.TextXAlignment = Enum.TextXAlignment.Left
-    Label.Parent = Row
-    
-    Btn.MouseEnter:Connect(function() TweenService:Create(Btn, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.WidgetHover}):Play() end)
-    Btn.MouseLeave:Connect(function() TweenService:Create(Btn, IM_THEME.WidgetInfo, {BackgroundColor3 = IM_THEME.WidgetIdle}):Play() end)
-    
-    Btn.MouseButton1Click:Connect(function()
-        currentIdx = currentIdx % #options + 1
-        local choice = options[currentIdx]
-        Btn.Text = tostring(choice)
-        callback(choice)
-    end)
-end
-
-function ImGuiAnimated:CreateDestructButton(parent: ScrollingFrame, text: string, callback: () -> ())
-    local Row = Instance.new("Frame")
-    Row.Size = UDim2.new(1, 0, 0, 26)
-    Row.BackgroundTransparency = 1
-    Row.Parent = parent
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -12, 0, 20)
-    Btn.Position = UDim2.new(0, 4, 0, 3)
-    Btn.BackgroundColor3 = Color3.fromRGB(130, 40, 40)
-    Btn.Text = text
-    Btn.TextColor3 = IM_THEME.TextMain
-    Btn.Font = IM_THEME.Font
-    Btn.TextSize = IM_THEME.FontSize
-    Btn.AutoButtonColor = false
-    local stroke = ApplyEngineStyles(Btn, 2)
-    stroke.Color = Color3.fromRGB(160, 50, 50)
-    Btn.Parent = Row
-    
-    Btn.MouseEnter:Connect(function() TweenService:Create(Btn, IM_THEME.WidgetInfo, {BackgroundColor3 = Color3.fromRGB(160, 50, 50)}):Play() end)
-    Btn.MouseLeave:Connect(function() TweenService:Create(Btn, IM_THEME.WidgetInfo, {BackgroundColor3 = Color3.fromRGB(130, 40, 40)}):Play() end)
-    Btn.MouseButton1Click:Connect(callback)
-end
-
-function ImGuiAnimated:_attachAnimatedDrag(trigger: GuiObject, windowFrame: Frame)
-    local active = false
-    local token: InputObject?
-    local pivot: Vector3?
-    local basePos: UDim2?
-    trigger.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            active = true; pivot = input.Position; basePos = windowFrame.Position
-            input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then active = false end end)
-        end
-    end)
-    trigger.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then token = input end
-    end)
-    UserInputService.InputChanged:Connect(function(input)
-        if input == token and active then
-            local offset = input.Position - (pivot :: Vector3)
-            TweenService:Create(windowFrame, IM_THEME.DragInfo, {
-                Position = UDim2.new((basePos :: UDim2).X.Scale, (basePos :: UDim2).X.Offset + offset.X, (basePos :: UDim2).Y.Scale, (basePos :: UDim2).Y.Offset + offset.Y)
-            }):Play()
-        end
-    end)
-end
-
--- [[ 3. 高频缓存、基础核心物理函数缓存段 ]]
 local WorldToScreenPoint = Camera.WorldToScreenPoint
 local GetPlayers = Players.GetPlayers
 local FindFirstChild = game.FindFirstChild
-local pairs, table_insert, table_find, math_clamp, math_floor, os_clock = pairs, table.insert, table.find, math.clamp, math.floor, os_clock
+local pairs, ipairs, table_insert, table_find, math_clamp, math_floor, os_clock = pairs, ipairs, table.insert, table.find, math.clamp, math.floor, os_clock
 local Vector2_new, Vector3_new, Color3_fromRGB, Color3_fromHSV = Vector2.new, Vector3.new, Color3.fromRGB, Color3.fromHSV
 
 local player_drawings = {}
 local HeadOff = Vector3_new(0, 0.5, 0)
 local LegOff = Vector3_new(0, 3, 0)
-
--- 全局内部高频标记变量
 local internal_raycast = false
 local is_intercepting = false
-
--- 随机数种子初始化
 math.randomseed(os.time() + math.floor(os.clock() * 1000))
+
 
 local SkeletonConnections = {
     R15 = {
@@ -552,69 +97,771 @@ local SkeletonConnections = {
     }
 }
 
-if getgenv()._fov_circle_instance then pcall(function() getgenv()._fov_circle_instance:Remove() end) end
 
+local Theme = {
+    Main_Background = Color3.fromRGB(11, 12, 18),
+    Sidebar_Background = Color3.fromRGB(7, 8, 12),
+    Section_Background = Color3.fromRGB(15, 16, 24),
+    Accent_Color = Color3.fromRGB(64, 115, 242),
+    Accent_Hover = Color3.fromRGB(85, 135, 255),
+    Text_Primary = Color3.fromRGB(240, 242, 248),
+    Text_Secondary = Color3.fromRGB(138, 142, 161),
+    Border_Color = Color3.fromRGB(28, 30, 43),
+    Border_Focused = Color3.fromRGB(45, 49, 71),
+    Toggle_Off = Color3.fromRGB(32, 35, 50),
+    Slider_Track = Color3.fromRGB(24, 26, 38),
+    Dropdown_Option_Hover = Color3.fromRGB(22, 24, 37),
+    Font_Main = Enum.Font.GothamSemibold,
+    Font_Secondary = Enum.Font.Gotham,
+    Tween_Fast = TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+    Tween_Smooth = TweenInfo.new(0.3, Enum.EasingStyle.Quart, Enum.EasingDirection.Out),
+    
+    
+    Reg_WindowBG = Color3.fromRGB(15, 16, 18),
+    Reg_TextSuccess = Color3.fromRGB(0, 230, 110),
+    Reg_TextError = Color3.fromRGB(240, 75, 75),
+    Reg_FontMono = Enum.Font.RobotoMono
+}
+
+local Utility = {}
+
+function Utility:Create(className, properties)
+    local instance = Instance.new(className)
+    for property, value in pairs(properties) do
+        instance[property] = value
+    end
+    return instance
+end
+
+function Utility:Tween(object, info, properties)
+    local tween = TweenService:Create(object, info, properties)
+    tween:Play()
+    return tween
+end
+
+function Utility:MakeDraggable(clickFrame, objectToDrag)
+    local dragging = false
+    local dragInput, dragStart, startPos
+
+    clickFrame.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = objectToDrag.Position
+
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    clickFrame.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+            dragInput = input
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if input == dragInput and dragging then
+            local delta = input.Position - dragStart
+            objectToDrag.Position = UDim2.new(
+                startPos.X.Scale,
+                startPos.X.Offset + delta.X,
+                startPos.Y.Scale,
+                startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+local function ApplyRegStroke(instance: GuiObject, radiusPixel: number): UIStroke
+    instance.BorderSizePixel = 0
+    local stroke = Instance.new("UIStroke")
+    stroke.Thickness = 1
+    stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    stroke.Color = Theme.Border_Color
+    stroke.Transparency = 0.15
+    stroke.Parent = instance
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, radiusPixel)
+    corner.Parent = instance
+    return stroke
+end
+
+
+local function PlayCoreInjectionIntro()
+    local IntroGui = Instance.new("ScreenGui")
+    IntroGui.Name = "CCONTOP_Splash_Network"
+    IntroGui.ResetOnSpawn = false
+    IntroGui.IgnoreGuiInset = true
+    IntroGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    
+    local success, _ = pcall(function() IntroGui.Parent = CoreGui:FindFirstChild("RobloxGui") or CoreGui end)
+    if not success then IntroGui.Parent = LocalPlayer:WaitForChild("PlayerGui") end
+    
+    local Backdrop = Instance.new("Frame")
+    Backdrop.Size = UDim2.new(1, 0, 1, 0)
+    Backdrop.BackgroundColor3 = Color3.fromRGB(8, 9, 11)
+    Backdrop.BackgroundTransparency = 1
+    Backdrop.Parent = IntroGui
+    
+    local AccentLine = Instance.new("Frame")
+    AccentLine.Size = UDim2.new(0, 0, 0, 2)
+    AccentLine.Position = UDim2.new(0.5, 0, 0.5, 30)
+    AccentLine.BackgroundColor3 = Theme.Accent_Color
+    AccentLine.BorderSizePixel = 0
+    AccentLine.Parent = Backdrop
+    
+    local TerminalText = Instance.new("TextLabel")
+    TerminalText.Size = UDim2.new(1, 0, 0, 40)
+    TerminalText.Position = UDim2.new(0, 0, 0.5, -20)
+    TerminalText.BackgroundTransparency = 1
+    TerminalText.Text = ""
+    TerminalText.TextColor3 = Theme.Text_Primary
+    TerminalText.Font = Theme.Reg_FontMono
+    TerminalText.TextSize = 26
+    TerminalText.TextTransparency = 1
+    TerminalText.Parent = Backdrop
+    
+    Utility:Tween(Backdrop, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {BackgroundTransparency = 0.15})
+    task.wait(0.4)
+    
+    TerminalText.TextTransparency = 0
+    Utility:Tween(AccentLine, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {Size = UDim2.new(0, 360, 0, 2), Position = UDim2.new(0.5, -180, 0.5, 30)})
+    
+    local rawLog = "CCONTOP CLOUD SECURE"
+    for length = 1, #rawLog do
+        TerminalText.Text = string.sub(rawLog, 1, length) .. "_"
+        task.wait(math.random() * 0.02 + 0.02)
+    end
+    TerminalText.Text = rawLog
+    
+    for blink = 1, 3 do
+        AccentLine.Visible = false; task.wait(0.1)
+        AccentLine.Visible = true; task.wait(0.1)
+    end
+    task.wait(0.3)
+    
+    Utility:Tween(TerminalText, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {TextTransparency = 1})
+    Utility:Tween(AccentLine, TweenInfo.new(0.3, Enum.EasingStyle.Quad), {Size = UDim2.new(0, 0, 0, 2), Position = UDim2.new(0.5, 0, 0.5, 30)})
+    local outro = Utility:Tween(Backdrop, TweenInfo.new(0.4, Enum.EasingStyle.Quad), {BackgroundTransparency = 1})
+    outro.Completed:Wait()
+    IntroGui:Destroy()
+end
+
+
+local RegSystem = {}
+function RegSystem:Initialize(screenGuiParent, onSuccessCallback)
+    local RegWindow = Instance.new("Frame")
+    RegWindow.Name = "RegistrationPanel"
+    RegWindow.Size = UDim2.new(0, 360, 0, 240)
+    RegWindow.Position = UDim2.new(0.5, -180, 0.5, -120)
+    RegWindow.BackgroundColor3 = Theme.Reg_WindowBG
+    RegWindow.BackgroundTransparency = 0.05
+    ApplyRegStroke(RegWindow, 6)
+    RegWindow.Active = true
+    RegWindow.Parent = screenGuiParent
+    
+    local Header = Instance.new("Frame")
+    Header.Size = UDim2.new(1, 0, 0, 28)
+    Header.BackgroundColor3 = Theme.Sidebar_Background
+    Header.Parent = RegWindow
+    local HeaderCorner = Instance.new("UICorner")
+    HeaderCorner.CornerRadius = UDim.new(0, 6)
+    HeaderCorner.Parent = Header
+    
+    local TitleLabel = Instance.new("TextLabel")
+    TitleLabel.Size = UDim2.new(1, -20, 1, 0)
+    TitleLabel.Position = UDim2.new(0, 12, 0, 0)
+    TitleLabel.BackgroundTransparency = 1
+    TitleLabel.Text = "CCONTOP SECURITY GATEWAY v6.2"
+    TitleLabel.TextColor3 = Theme.Text_Primary
+    TitleLabel.Font = Theme.Reg_FontMono
+    TitleLabel.TextSize = 13
+    TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    TitleLabel.Parent = Header
+    
+    local HwidLabel = Instance.new("TextLabel")
+    HwidLabel.Size = UDim2.new(1, -24, 0, 20)
+    HwidLabel.Position = UDim2.new(0, 12, 0, 42)
+    HwidLabel.BackgroundTransparency = 1
+    HwidLabel.Text = "YOUR HWID: " .. string.sub(AuthConfig.HardwareID, 1, 28) .. "..."
+    HwidLabel.TextColor3 = Theme.Text_Secondary
+    HwidLabel.Font = Theme.Reg_FontMono
+    HwidLabel.TextSize = 11
+    HwidLabel.TextXAlignment = Enum.TextXAlignment.Left
+    HwidLabel.Parent = RegWindow
+    
+    local InputBox = Instance.new("TextBox")
+    InputBox.Size = UDim2.new(1, -24, 0, 36)
+    InputBox.Position = UDim2.new(0, 12, 0, 68)
+    InputBox.BackgroundColor3 = Theme.Toggle_Off
+    InputBox.Text = ""
+    InputBox.PlaceholderText = "ENTER YOUR REGISTRATION CARD KEY..."
+    InputBox.TextColor3 = Theme.Text_Primary
+    InputBox.PlaceholderColor3 = Color3.fromRGB(90, 100, 110)
+    InputBox.Font = Theme.Reg_FontMono
+    InputBox.TextSize = 12
+    ApplyRegStroke(InputBox, 4)
+    InputBox.Parent = RegWindow
+    
+    local StatusLabel = Instance.new("TextLabel")
+    StatusLabel.Size = UDim2.new(1, -24, 0, 22)
+    StatusLabel.Position = UDim2.new(0, 12, 0, 112)
+    StatusLabel.BackgroundTransparency = 1
+    StatusLabel.Text = "Awaiting license keys input authorization..."
+    StatusLabel.TextColor3 = Theme.Text_Secondary
+    StatusLabel.Font = Theme.Reg_FontMono
+    StatusLabel.TextSize = 11
+    StatusLabel.TextXAlignment = Enum.TextXAlignment.Center
+    StatusLabel.Parent = RegWindow
+    
+    local LoginBtn = Instance.new("TextButton")
+    LoginBtn.Size = UDim2.new(0, 155, 0, 34)
+    LoginBtn.Position = UDim2.new(0, 12, 0, 145)
+    LoginBtn.BackgroundColor3 = Theme.Accent_Color
+    LoginBtn.Text = "VERIFY KEY"
+    LoginBtn.TextColor3 = Theme.Text_Primary
+    LoginBtn.Font = Theme.Reg_FontMono
+    LoginBtn.TextSize = 12
+    LoginBtn.AutoButtonColor = false
+    ApplyRegStroke(LoginBtn, 4)
+    LoginBtn.Parent = RegWindow
+    
+    local CopyBtn = Instance.new("TextButton")
+    CopyBtn.Size = UDim2.new(0, 155, 0, 34)
+    CopyBtn.Position = UDim2.new(1, -167, 0, 145)
+    CopyBtn.BackgroundColor3 = Theme.Toggle_Off
+    CopyBtn.Text = "COPY HWID"
+    CopyBtn.TextColor3 = Theme.Text_Secondary
+    CopyBtn.Font = Theme.Reg_FontMono
+    CopyBtn.TextSize = 12
+    CopyBtn.AutoButtonColor = false
+    ApplyRegStroke(CopyBtn, 4)
+    CopyBtn.Parent = RegWindow
+    
+    Utility:MakeDraggable(Header, RegWindow)
+    
+    LoginBtn.MouseEnter:Connect(function() Utility:Tween(LoginBtn, Theme.Tween_Fast, {BackgroundColor3 = Theme.Accent_Hover}) end)
+    LoginBtn.MouseLeave:Connect(function() Utility:Tween(LoginBtn, Theme.Tween_Fast, {BackgroundColor3 = Theme.Accent_Color}) end)
+    
+    CopyBtn.MouseButton1Click:Connect(function()
+        if setclipboard then 
+            setclipboard(AuthConfig.HardwareID)
+            StatusLabel.Text = "HWID Token copied successfully."
+            StatusLabel.TextColor3 = Theme.Reg_TextSuccess
+        else
+            StatusLabel.Text = "Executor doesn't support clipboard functions."
+            StatusLabel.TextColor3 = Theme.Reg_TextError
+        end
+    end)
+    
+    LoginBtn.MouseButton1Click:Connect(function()
+        local inputtedKey = InputBox.Text
+        if inputtedKey == "" then
+            StatusLabel.Text = "ERROR: Key input field cannot be blank."
+            StatusLabel.TextColor3 = Theme.Reg_TextError
+        end
+        
+        StatusLabel.Text = "Connecting Cloud Gateway... Authenticating..."
+        StatusLabel.TextColor3 = Theme.Accent_Color
+        task.wait(0.8) 
+        
+        local passed = false
+        if AuthConfig.GatewayMode == "LocalPool" then
+            if AuthConfig.LocalCardPool[inputtedKey] then passed = true end
+        elseif AuthConfig.GatewayMode == "RemoteAPI" then
+            pcall(function()
+                local response = request({
+                    Url = AuthConfig.GATEWAY_URL,
+                    Method = "POST",
+                    Headers = { ["Content-Type"] = "application/json" },
+                    Body = HttpService:JSONEncode({ key = inputtedKey, hwid = AuthConfig.HardwareID })
+                })
+                if response and response.StatusCode == 200 then
+                    local data = HttpService:JSONDecode(response.Body)
+                    if data.success then passed = true end
+                end
+            end)
+        end
+        
+        if passed then
+            StatusLabel.Text = "ACCESS GRANTED! INITIALIZING MAIN FRAME..."
+            StatusLabel.TextColor3 = Theme.Reg_TextSuccess
+            task.wait(0.6)
+            
+            local closeTween = Utility:Tween(RegWindow, Theme.Tween_Fast, {Size = UDim2.new(0, 360, 0, 0), BackgroundTransparency = 1})
+            for _, child in ipairs(RegWindow:GetDescendants()) do
+                if child:IsA("TextLabel") or child:IsA("TextBox") or child:IsA("TextButton") then
+                    Utility:Tween(child, Theme.Tween_Fast, {TextTransparency = 1, BackgroundTransparency = 1})
+                end
+            end
+            closeTween.Completed:Wait()
+            RegWindow:Destroy()
+            
+            
+            onSuccessCallback()
+        else
+            StatusLabel.Text = "INVALID KEY: Identification rejected."
+            StatusLabel.TextColor3 = Theme.Reg_TextError
+        end
+    end)
+end
+
+
+local Library = {
+    Registry = {},
+    OpenTabs = {},
+    CurrentTab = nil
+}
+Library.__index = Library
+
+function Library:CreateWindow(config)
+    config = config or {}
+    local WindowInstance = {
+        Tabs = {},
+        ActiveTab = nil,
+        Title = config.Title or "CConTop",
+        SubTitle = config.SubTitle or "Premium UI",
+        User = config.User or "Unknown",
+        Subscription = config.Subscription or "Lifetime"
+    }
+    
+    local BaseGui = Utility:Create("ScreenGui", {
+        Name = "KuduUi_Root",
+        Parent = CoreGui,
+        ResetOnSpawn = false,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    })
+    WindowInstance.BaseGui = BaseGui
+
+    local MainFrame = Utility:Create("Frame", {
+        Name = "MainFrame",
+        Parent = BaseGui,
+        Position = UDim2.new(0.5, -425, 0.5, -275),
+        Size = UDim2.new(0, 850, 0, 550),
+        BackgroundColor3 = Theme.Main_Background,
+        BackgroundTransparency = 0.05,
+        BorderSizePixel = 0,
+        ClipsDescendants = false,
+        Visible = false 
+    })
+    WindowInstance.MainFrame = MainFrame
+
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 12), Parent = MainFrame })
+    Utility:Create("UIStroke", {
+        Color = Theme.Border_Color,
+        Thickness = 1,
+        ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
+        Parent = MainFrame
+    })
+
+    Utility:MakeDraggable(MainFrame, MainFrame)
+
+    local Sidebar = Utility:Create("Frame", {
+        Name = "Sidebar",
+        Parent = MainFrame,
+        Position = UDim2.new(0, 0, 0, 0),
+        Size = UDim2.new(0, 200, 1, 0),
+        BackgroundColor3 = Theme.Sidebar_Background,
+        BorderSizePixel = 0
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 12), Parent = Sidebar })
+    Utility:Create("Frame", {
+        Size = UDim2.new(0, 1, 1, 0),
+        Position = UDim2.new(1, -1, 0, 0),
+        BackgroundColor3 = Theme.Border_Color,
+        BorderSizePixel = 0,
+        Parent = Sidebar
+    })
+
+    local LogoContainer = Utility:Create("Frame", {
+        Size = UDim2.new(1, 0, 0, 70),
+        BackgroundTransparency = 1,
+        Parent = Sidebar
+    })
+    local LogoLabel = Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 20, 0, 15),
+        Size = UDim2.new(0, 35, 0, 35),
+        BackgroundColor3 = Theme.Accent_Color,
+        Text = "CT",
+        TextColor3 = Theme.Text_Primary,
+        Font = Theme.Font_Main,
+        TextSize = 16,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = LogoContainer
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = LogoLabel })
+
+    Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 65, 0, 15),
+        Size = UDim2.new(1, -75, 0, 20),
+        BackgroundTransparency = 1,
+        Text = WindowInstance.Title,
+        TextColor3 = Theme.Text_Primary,
+        Font = Theme.Font_Main,
+        TextSize = 15,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = LogoContainer
+    })
+    Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 65, 0, 33),
+        Size = UDim2.new(1, -75, 0, 15),
+        BackgroundTransparency = 1,
+        Text = WindowInstance.SubTitle,
+        TextColor3 = Theme.Text_Secondary,
+        Font = Theme.Font_Secondary,
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        Parent = LogoContainer
+    })
+
+    local TabScroll = Utility:Create("ScrollingFrame", {
+        Name = "TabScroll",
+        Parent = Sidebar,
+        Position = UDim2.new(0, 0, 0, 70),
+        Size = UDim2.new(1, 0, 1, -140),
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 0
+    })
+    Utility:Create("UIListLayout", { Parent = TabScroll, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 4) })
+    Utility:Create("UIPadding", { PaddingTop = UDim.new(0, 5), PaddingLeft = UDim.new(0, 12), PaddingRight = UDim.new(0, 12), Parent = TabScroll })
+
+    local Footer = Utility:Create("Frame", { Position = UDim2.new(0, 0, 1, -70), Size = UDim2.new(1, 0, 0, 70), BackgroundTransparency = 1, Parent = Sidebar })
+    local UserAvatar = Utility:Create("ImageLabel", {
+        Position = UDim2.new(0, 20, 0, 15), Size = UDim2.new(0, 36, 0, 36),
+        BackgroundColor3 = Theme.Section_Background, Image = "rbxassetid://6034287525", Parent = Footer
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = UserAvatar })
+    Utility:Create("UIStroke", { Color = Theme.Border_Color, Thickness = 1, Parent = UserAvatar })
+
+    Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 65, 0, 17), Size = UDim2.new(1, -75, 0, 16), BackgroundTransparency = 1,
+        Text = WindowInstance.User, TextColor3 = Theme.Text_Primary, Font = Theme.Font_Main, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = Footer
+    })
+    Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 65, 0, 33), Size = UDim2.new(1, -75, 0, 14), BackgroundTransparency = 1,
+        Text = WindowInstance.Subscription, TextColor3 = Theme.Accent_Color, Font = Theme.Font_Secondary, TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = Footer
+    })
+
+    local RightContainer = Utility:Create("Frame", { Name = "RightContainer", Parent = MainFrame, Position = UDim2.new(0, 200, 0, 0), Size = UDim2.new(1, -200, 1, 0), BackgroundTransparency = 1 })
+    local TopBar = Utility:Create("Frame", { Size = UDim2.new(1, 0, 0, 55), BackgroundTransparency = 1, Parent = RightContainer })
+    Utility:Create("Frame", { Size = UDim2.new(1, 0, 0, 1), Position = UDim2.new(0, 0, 1, -1), BackgroundColor3 = Theme.Border_Color, BorderSizePixel = 0, Parent = TopBar })
+
+    local PageContainer = Utility:Create("Frame", { Name = "PageContainer", Parent = RightContainer, Position = UDim2.new(0, 0, 0, 55), Size = UDim2.new(1, 0, 1, -55), BackgroundTransparency = 1 })
+
+    WindowInstance.TabScroll = TabScroll
+    WindowInstance.PageContainer = PageContainer
+
+    setmetatable(WindowInstance, Library)
+    return WindowInstance
+end
+
+
+local Tab = {}
+Tab.__index = Tab
+
+function Library:CreateTab(options)
+    options = options or {}
+    local TabInstance = { Window = self, Name = options.Name or "Tab" }
+
+    local TabButton = Utility:Create("TextButton", {
+        Name = TabInstance.Name .. "_Btn", Parent = self.TabScroll, Size = UDim2.new(1, 0, 0, 38),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0), BackgroundTransparency = 1, Text = "", AutoButtonColor = false
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 6), Parent = TabButton })
+
+    local TabLabel = Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 15, 0, 0), Size = UDim2.new(1, -20, 1, 0), BackgroundTransparency = 1,
+        Text = TabInstance.Name, TextColor3 = Theme.Text_Secondary, Font = Theme.Font_Main, TextSize = 13,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = TabButton
+    })
+
+    local PageView = Utility:Create("ScrollingFrame", {
+        Name = TabInstance.Name .. "_Page", Parent = self.PageContainer, Size = UDim2.new(1, 0, 1, 0),
+        BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, ScrollBarThickness = 2,
+        ScrollBarImageColor3 = Theme.Border_Focused, CanvasSize = UDim2.new(0, 0, 0, 0)
+    })
+    TabInstance.PageView = PageView
+
+    local LeftColumn = Utility:Create("Frame", { Name = "LeftColumn", Parent = PageView, Position = UDim2.new(0, 15, 0, 15), Size = UDim2.new(0.5, -20, 1, -30), BackgroundTransparency = 1 })
+    TabInstance.LeftColumnFrame = LeftColumn
+    local RightColumn = Utility:Create("Frame", { Name = "RightColumn", Parent = PageView, Position = UDim2.new(0.5, 5, 0, 15), Size = UDim2.new(0.5, -20, 1, -30), BackgroundTransparency = 1 })
+    TabInstance.RightColumnFrame = RightColumn
+
+    local LeftLayout = Utility:Create("UIListLayout", { Parent = LeftColumn, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 14) })
+    local RightLayout = Utility:Create("UIListLayout", { Parent = RightColumn, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 14) })
+
+    local function AutomaticallyAdjustCanvas()
+        local MaxCalculatedBound = math.max(LeftLayout.AbsoluteContentSize.Y, RightLayout.AbsoluteContentSize.Y)
+        PageView.CanvasSize = UDim2.new(0, 0, 0, MaxCalculatedBound + 40)
+    end
+    LeftLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(AutomaticallyAdjustCanvas)
+    RightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(AutomaticallyAdjustCanvas)
+
+    TabButton.MouseButton1Click:Connect(function()
+        for _, activeBtn in ipairs(self.TabScroll:GetChildren()) do
+            if activeBtn:IsA("TextButton") then
+                Utility:Tween(activeBtn, Theme.Tween_Fast, { BackgroundTransparency = 1 })
+                activeBtn:FindFirstChildOfClass("TextLabel").TextColor3 = Theme.Text_Secondary
+            end
+        end
+        for _, page in ipairs(self.PageContainer:GetChildren()) do page.Visible = false end
+        Utility:Tween(TabButton, Theme.Tween_Fast, { BackgroundTransparency = 0.85, BackgroundColor3 = Theme.Border_Color })
+        TabLabel.TextColor3 = Theme.Text_Primary
+        PageView.Visible = true
+        self.CurrentTab = TabInstance
+    end)
+
+    if not self.CurrentTab then
+        Utility:Tween(TabButton, Theme.Tween_Fast, { BackgroundTransparency = 0.85, BackgroundColor3 = Theme.Border_Color })
+        TabLabel.TextColor3 = Theme.Text_Primary
+        PageView.Visible = true
+        self.CurrentTab = TabInstance
+    end
+
+    setmetatable(TabInstance, Tab)
+    return TabInstance
+end
+
+
+local Section = {}
+Section.__index = Section
+
+function Tab:CreateSection(options)
+    options = options or {}
+    local SectionInstance = { Tab = self, Name = options.Name or "SECTION", Side = (options.Side == "Right" and "Right") or "Left" }
+    local TargetColumn = (SectionInstance.Side == "Left" and self.LeftColumnFrame) or self.RightColumnFrame
+
+    local SectionFrame = Utility:Create("Frame", {
+        Name = SectionInstance.Name .. "_Section", Parent = TargetColumn, Size = UDim2.new(1, 0, 0, 40),
+        BackgroundColor3 = Theme.Section_Background, BackgroundTransparency = 0.3, BorderSizePixel = 0, ClipsDescendants = false
+    })
+    SectionInstance.Frame = SectionFrame
+
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 8), Parent = SectionFrame })
+    Utility:Create("UIStroke", { Color = Theme.Border_Color, Thickness = 1, Parent = SectionFrame })
+
+    Utility:Create("TextLabel", {
+        Position = UDim2.new(0, 14, 0, 12), Size = UDim2.new(1, -28, 0, 14), BackgroundTransparency = 1,
+        Text = string.upper(SectionInstance.Name), TextColor3 = Theme.Text_Secondary, Font = Theme.Font_Main, TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = SectionFrame
+    })
+
+    local ComponentContainer = Utility:Create("Frame", { Name = "Container", Parent = SectionFrame, Position = UDim2.new(0, 0, 0, 34), Size = UDim2.new(1, 0, 0, 0), BackgroundTransparency = 1 })
+    SectionInstance.ComponentContainer = ComponentContainer
+    local CompLayout = Utility:Create("UIListLayout", { Parent = ComponentContainer, SortOrder = Enum.SortOrder.LayoutOrder, Padding = UDim.new(0, 6) })
+    Utility:Create("UIPadding", { PaddingLeft = UDim.new(0, 14), PaddingRight = UDim.new(0, 14), PaddingTop = UDim.new(0, 2), PaddingBottom = UDim.new(0, 2), Parent = ComponentContainer })
+
+    function SectionInstance:RecalculateSize()
+        task.defer(function()
+            local DynamicContentHeight = CompLayout.AbsoluteContentSize.Y
+            ComponentContainer.Size = UDim2.new(1, 0, 0, DynamicContentHeight)
+            self.Frame.Size = UDim2.new(1, 0, 0, 34 + DynamicContentHeight + 12)
+        end)
+    end
+    CompLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() SectionInstance:RecalculateSize() end)
+
+    setmetatable(SectionInstance, Section)
+    return SectionInstance
+end
+
+
+function Section:AddToggle(options)
+    options = options or {}
+    local ToggleInstance = { State = options.Default or false, Callback = options.Callback or function() end }
+    local ToggleRow = Utility:Create("Frame", { Size = UDim2.new(1, 0, 0, 28), BackgroundTransparency = 1, Parent = self.ComponentContainer })
+
+    local ToggleLabel = Utility:Create("TextLabel", {
+        Size = UDim2.new(1, -45, 1, 0), BackgroundTransparency = 1, Text = options.Name or "Toggle",
+        TextColor3 = ToggleInstance.State and Theme.Text_Primary or Theme.Text_Secondary,
+        Font = Theme.Font_Secondary, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = ToggleRow
+    })
+
+    local ToggleFrame = Utility:Create("TextButton", {
+        Position = UDim2.new(1, -38, 0.5, -9), Size = UDim2.new(0, 38, 0, 18),
+        BackgroundColor3 = ToggleInstance.State and Theme.Accent_Color or Theme.Toggle_Off, Text = "", AutoButtonColor = false, Parent = ToggleRow
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = ToggleFrame })
+    Utility:Create("UIStroke", { Color = Theme.Border_Color, Thickness = 1, Parent = ToggleFrame })
+
+    local IndicatorDot = Utility:Create("Frame", {
+        Position = ToggleInstance.State and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6),
+        Size = UDim2.new(0, 12, 0, 12), BackgroundColor3 = Theme.Text_Primary, Parent = ToggleFrame
+    })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = IndicatorDot })
+
+    local function SetToggleState(newState)
+        ToggleInstance.State = newState
+        local TargetPos = newState and UDim2.new(1, -15, 0.5, -6) or UDim2.new(0, 3, 0.5, -6)
+        Utility:Tween(IndicatorDot, Theme.Tween_Fast, { Position = TargetPos })
+        Utility:Tween(ToggleFrame, Theme.Tween_Fast, { BackgroundColor3 = newState and Theme.Accent_Color or Theme.Toggle_Off })
+        Utility:Tween(ToggleLabel, Theme.Tween_Fast, { TextColor3 = newState and Theme.Text_Primary or Theme.Text_Secondary })
+        task.spawn(ToggleInstance.Callback, ToggleInstance.State)
+    end
+
+    ToggleFrame.MouseButton1Click:Connect(function() SetToggleState(not ToggleInstance.State) end)
+    self:RecalculateSize()
+
+    function ToggleInstance:Set(val) SetToggleState(val) end
+    return ToggleInstance
+end
+
+function Section:AddSlider(options)
+    options = options or {}
+    local SliderInstance = { Min = options.Min or 0, Max = options.Max or 100, Value = options.Default or 50, Decimals = options.Decimals or 0, Suffix = options.Suffix or "", Callback = options.Callback or function() end, ActiveDragging = false }
+    local SliderRow = Utility:Create("Frame", { Size = UDim2.new(1, 0, 0, 38), BackgroundTransparency = 1, Parent = self.ComponentContainer })
+
+    local SliderLabel = Utility:Create("TextLabel", { Size = UDim2.new(1, -70, 0, 16), BackgroundTransparency = 1, Text = options.Name or "Slider", TextColor3 = Theme.Text_Secondary, Font = Theme.Font_Secondary, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = SliderRow })
+    local ValueLabel = Utility:Create("TextLabel", { Position = UDim2.new(1, -66, 0, 0), Size = UDim2.new(0, 66, 0, 16), BackgroundTransparency = 1, Text = tostring(SliderInstance.Value) .. SliderInstance.Suffix, TextColor3 = Theme.Text_Primary, Font = Theme.Font_Main, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, TextYAlignment = Enum.TextYAlignment.Center, Parent = SliderRow })
+    local Track = Utility:Create("TextButton", { Position = UDim2.new(0, 0, 0, 24), Size = UDim2.new(1, 0, 0, 4), BackgroundColor3 = Theme.Slider_Track, Text = "", AutoButtonColor = false, Parent = SliderRow })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = Track })
+    local FillBar = Utility:Create("Frame", { Size = UDim2.new((SliderInstance.Value - SliderInstance.Min) / (SliderInstance.Max - SliderInstance.Min), 0, 1, 0), BackgroundColor3 = Theme.Accent_Color, BorderSizePixel = 0, Parent = Track })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(1, 0), Parent = FillBar })
+
+    local function UpdateSliderValue(inputPosition)
+        local RelativeX = math.clamp((inputPosition.X - Track.AbsolutePosition.X) / Track.AbsoluteSize.X, 0, 1)
+        local DeltaValue = SliderInstance.Max - SliderInstance.Min
+        local ExtrapolatedValue = SliderInstance.Min + (RelativeX * DeltaValue)
+        local Factor = 10 ^ SliderInstance.Decimals
+        local FinalValue = math.round(ExtrapolatedValue * Factor) / Factor
+        SliderInstance.Value = FinalValue
+        FillBar.Size = UDim2.new(RelativeX, 0, 1, 0)
+        ValueLabel.Text = tostring(FinalValue) .. SliderInstance.Suffix
+        task.spawn(SliderInstance.Callback, FinalValue)
+    end
+
+    Track.InputBegan:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then SliderInstance.ActiveDragging = true; UpdateSliderValue(input.Position) end end)
+    UserInputService.InputChanged:Connect(function(input) if SliderInstance.ActiveDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then UpdateSliderValue(input.Position) end end)
+    UserInputService.InputEnded:Connect(function(input) if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then SliderInstance.ActiveDragging = false end end)
+    self:RecalculateSize()
+
+    function SliderInstance:Set(val)
+        local SafeVal = math.clamp(val, self.Min, self.Max)
+        self.Value = SafeVal
+        FillBar.Size = UDim2.new((SafeVal - self.Min) / (self.Max - self.Min), 0, 1, 0)
+        ValueLabel.Text = tostring(SafeVal) .. self.Suffix
+        task.spawn(self.Callback, SafeVal)
+    end
+    return SliderInstance
+end
+
+function Section:AddDropdown(options)
+    options = options or {}
+    local DropdownInstance = { Options = options.Options or {}, Value = options.Default or "", OpenState = false, Callback = options.Callback or function() end }
+    local DropdownRow = Utility:Create("Frame", { Size = UDim2.new(1, 0, 0, 44), BackgroundTransparency = 1, Parent = self.ComponentContainer })
+    local DropdownLabel = Utility:Create("TextLabel", { Size = UDim2.new(1, 0, 0, 14), BackgroundTransparency = 1, Text = options.Name or "Dropdown", TextColor3 = Theme.Text_Secondary, Font = Theme.Font_Secondary, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = DropdownRow })
+    local DropdownBox = Utility:Create("TextButton", { Position = UDim2.new(0, 0, 0, 18), Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = Theme.Toggle_Off, Text = "", AutoButtonColor = false, Parent = DropdownRow })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = DropdownBox })
+    Utility:Create("UIStroke", { Color = Theme.Border_Color, Thickness = 1, Parent = DropdownBox })
+    local SelectedText = Utility:Create("TextLabel", { Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -35, 1, 0), BackgroundTransparency = 1, Text = DropdownInstance.Value ~= "" and DropdownInstance.Value or "Select...", TextColor3 = Theme.Text_Primary, Font = Theme.Font_Secondary, TextSize = 13, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = DropdownBox })
+    local ArrowIcon = Utility:Create("TextLabel", { Position = UDim2.new(1, -22, 0, 0), Size = UDim2.new(0, 20, 1, 0), BackgroundTransparency = 1, Text = "▼", TextColor3 = Theme.Text_Secondary, Font = Theme.Font_Main, TextSize = 9, TextYAlignment = Enum.TextYAlignment.Center, Parent = DropdownBox })
+
+    local OptionsFrame = Utility:Create("ScrollingFrame", { Position = UDim2.new(0, 0, 0, 44), Size = UDim2.new(1, 0, 0, 0), BackgroundColor3 = Theme.Toggle_Off, BorderSizePixel = 0, Visible = false, ZIndex = 5, CanvasSize = UDim2.new(0, 0, 0, 0), ScrollBarThickness = 2, Parent = DropdownRow })
+    Utility:Create("UICorner", { CornerRadius = UDim.new(0, 4), Parent = OptionsFrame })
+    Utility:Create("UIStroke", { Color = Theme.Border_Focused, Thickness = 1, Parent = OptionsFrame })
+    local OptionsListLayout = Utility:Create("UIListLayout", { Parent = OptionsFrame, SortOrder = Enum.SortOrder.LayoutOrder })
+
+    local function AdjustExpansionMenu(state)
+        DropdownInstance.OpenState = state
+        if state then
+            OptionsFrame.Visible = true; ArrowIcon.Text = "▲"
+            local ProjectedHeight = math.min(#DropdownInstance.Options * 24, 120)
+            DropdownRow.ZIndex = 10; DropdownBox.ZIndex = 11; OptionsFrame.ZIndex = 12
+            Utility:Tween(OptionsFrame, Theme.Tween_Fast, { Size = UDim2.new(1, 0, 0, ProjectedHeight) })
+            DropdownRow.Size = UDim2.new(1, 0, 0, 44 + ProjectedHeight + 4)
+        else
+            ArrowIcon.Text = "▼"; DropdownRow.ZIndex = 1; DropdownBox.ZIndex = 1; OptionsFrame.ZIndex = 1
+            local ClosingTween = Utility:Tween(OptionsFrame, Theme.Tween_Fast, { Size = UDim2.new(1, 0, 0, 0) })
+            ClosingTween.Completed:Connect(function() if not DropdownInstance.OpenState then OptionsFrame.Visible = false end end)
+            DropdownRow.Size = UDim2.new(1, 0, 0, 44)
+        end
+        self:RecalculateSize()
+    end
+
+    local function RepopulateMenuElements()
+        for _, oldOpt in ipairs(OptionsFrame:GetChildren()) do if oldOpt:IsA("TextButton") then oldOpt:Destroy() end end
+        local TotalCanvasY = 0
+        for idx, optionName in ipairs(DropdownInstance.Options) do
+            local OptBtn = Utility:Create("TextButton", { Size = UDim2.new(1, 0, 0, 24), BackgroundColor3 = Theme.Toggle_Off, BackgroundTransparency = 1, Text = "", ZIndex = 13, AutoButtonColor = false, Parent = OptionsFrame })
+            local OptLabel = Utility:Create("TextLabel", { Position = UDim2.new(0, 10, 0, 0), Size = UDim2.new(1, -10, 1, 0), BackgroundTransparency = 1, Text = optionName, TextColor3 = (optionName == DropdownInstance.Value) and Theme.Accent_Color or Theme.Text_Secondary, Font = Theme.Font_Secondary, TextSize = 12, ZIndex = 14, TextXAlignment = Enum.TextXAlignment.Left, TextYAlignment = Enum.TextYAlignment.Center, Parent = OptBtn })
+
+            OptBtn.MouseEnter:Connect(function() Utility:Tween(OptBtn, Theme.Tween_Fast, { BackgroundTransparency = 0, BackgroundColor3 = Theme.Dropdown_Option_Hover }); if optionName ~= DropdownInstance.Value then OptLabel.TextColor3 = Theme.Text_Primary end end)
+            OptBtn.MouseLeave:Connect(function() Utility:Tween(OptBtn, Theme.Tween_Fast, { BackgroundTransparency = 1 }); if optionName ~= DropdownInstance.Value then OptLabel.TextColor3 = Theme.Text_Secondary end end)
+            OptBtn.MouseButton1Click:Connect(function()
+                DropdownInstance.Value = optionName; SelectedText.Text = optionName; AdjustExpansionMenu(false)
+                for _, otherOpt in ipairs(OptionsFrame:GetChildren()) do if otherOpt:IsA("TextButton") then local lbl = otherOpt:FindFirstChildOfClass("TextLabel") if lbl then lbl.TextColor3 = (lbl.Text == DropdownInstance.Value) and Theme.Accent_Color or Theme.Text_Secondary end end end
+                task.spawn(DropdownInstance.Callback, optionName)
+            end)
+            TotalCanvasY = TotalCanvasY + 24
+        end
+        OptionsFrame.CanvasSize = UDim2.new(0, 0, 0, TotalCanvasY)
+    end
+
+    DropdownBox.MouseButton1Click:Connect(function() AdjustExpansionMenu(not DropdownInstance.OpenState) end)
+    RepopulateMenuElements()
+    self:RecalculateSize()
+
+    function DropdownInstance:Set(val)
+        self.Value = val; SelectedText.Text = val
+        for _, otherOpt in ipairs(OptionsFrame:GetChildren()) do if otherOpt:IsA("TextButton") then local lbl = otherOpt:FindFirstChildOfClass("TextLabel") if lbl then lbl.TextColor3 = (lbl.Text == val) and Theme.Accent_Color or Theme.Text_Secondary end end end
+        task.spawn(self.Callback, val)
+    end
+    return DropdownInstance
+end
+
+
+if getgenv()._fov_circle_instance then pcall(function() getgenv()._fov_circle_instance:Remove() end) end
 local fov_circle = Drawing.new("Circle")
 fov_circle.Thickness = 1
 fov_circle.NumSides = 32
-fov_circle.Radius = esp_settings.aim_fov
+fov_circle.Radius = NeverloseConfig.Rage.Main.FieldOfView
 fov_circle.Filled = false
 fov_circle.Transparency = 0.5
-fov_circle.Color = Color3_fromRGB(30, 90, 160)
+fov_circle.Color = Theme.Accent_Color
 getgenv()._fov_circle_instance = fov_circle
 
 RunService.RenderStepped:Connect(function()
     if fov_circle then
-        local is_visible = esp_settings.fov_visible and esp_settings.silent_aim and esp_settings.enabled
+        local is_visible = NeverloseConfig.GlobalEnabled and NeverloseConfig.Visuals.ESP.FovVisible and NeverloseConfig.Rage.Main.SilentAim
         fov_circle.Visible = is_visible
         if is_visible then
-            fov_circle.Radius = esp_settings.aim_fov
-            local viewportSize = Camera.ViewportSize
-            fov_circle.Position = Vector2_new(viewportSize.X / 2, viewportSize.Y / 2)
+            fov_circle.Radius = NeverloseConfig.Rage.Main.FieldOfView
+            fov_circle.Position = Vector2_new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         end
     end
 end)
 
 local function isEnemy(player)
-    if not esp_settings.team_check then return true end
-    return player.Team ~= lplr.Team
-end
-
-local function GetOnScreenPosition(V3)
-    local Position, IsVisible = WorldToScreenPoint(Camera, V3)
-    return Vector2_new(Position.X, Position.Y), IsVisible
-end
-
-local function GetDirection(Origin, Position)
-    return (Position - Origin).Unit * (Origin - Position).Magnitude
-end
-
-local function GetMousePosition()
-    return Vector2_new(Mouse.X, Mouse.Y)
+    return player.Team ~= LocalPlayer.Team
 end
 
 local function GetClosestPlayer()
-    if not esp_settings.enabled or not esp_settings.silent_aim then return nil end
-    
-    local Closest, Distance = nil, esp_settings.aim_fov
-    local MousePos = GetMousePosition()
-    local myChar = lplr.Character
+    if not NeverloseConfig.GlobalEnabled or not NeverloseConfig.Rage.Main.SilentAim then return nil end
+    local Closest, Distance = nil, NeverloseConfig.Rage.Main.FieldOfView
+    local MousePos = Vector2_new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+    local myChar = LocalPlayer.Character
     local myRoot = myChar and FindFirstChild(myChar, "HumanoidRootPart")
     
     for _, Player in next, GetPlayers(Players) do
-        if Player ~= lplr and isEnemy(Player) then
+        if Player ~= LocalPlayer and isEnemy(Player) then
             local Character = Player.Character
-            local TargetPart = Character and FindFirstChild(Character, esp_settings.aim_part)
+            local TargetPart = Character and FindFirstChild(Character, NeverloseConfig.Rage.Main.AimPart)
             local Humanoid = Character and FindFirstChild(Character, "Humanoid")
             
             if TargetPart and (Humanoid and Humanoid.Health > 0) then
-                if myRoot and (myRoot.Position - TargetPart.Position).Magnitude > esp_settings.max_distance then 
-                    continue 
-                end
-                
-                local ScreenPos, IsVisible = GetOnScreenPosition(TargetPart.Position)
+                if myRoot and (myRoot.Position - TargetPart.Position).Magnitude > NeverloseConfig.Rage.Main.MaxDistance then continue end
+                local Position, IsVisible = WorldToScreenPoint(Camera, TargetPart.Position)
                 if IsVisible then
-                    local _Distance = (MousePos - ScreenPos).Magnitude
+                    local _Distance = (MousePos - Vector2_new(Position.X, Position.Y)).Magnitude
                     if _Distance <= Distance then
                         Closest = TargetPart
                         Distance = _Distance
@@ -626,24 +873,23 @@ local function GetClosestPlayer()
     return Closest
 end
 
--- 自动扳机循环
+
 RunService.PostSimulation:Connect(function()
-    if esp_settings.enabled and esp_settings.triggerbot then
-        local viewportSize = Camera.ViewportSize
-        local unitRay = Camera:ViewportPointToRay(viewportSize.X / 2, viewportSize.Y / 2)
+    if NeverloseConfig.GlobalEnabled and NeverloseConfig.Rage.Main.Triggerbot then
+        local unitRay = Camera:ViewportPointToRay(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
         local raycastParams = RaycastParams.new()
         raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-        raycastParams.FilterDescendantsInstances = {lplr.Character}
+        raycastParams.FilterDescendantsInstances = {LocalPlayer.Character}
         
         internal_raycast = true
-        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * esp_settings.max_distance, raycastParams)
+        local result = workspace:Raycast(unitRay.Origin, unitRay.Direction * NeverloseConfig.Rage.Main.MaxDistance, raycastParams)
         internal_raycast = false
         
         if result and result.Instance then
             local model = result.Instance:FindFirstAncestorOfClass("Model")
             if model then
                 local player = Players:GetPlayerFromCharacter(model)
-                if player and player ~= lplr and isEnemy(player) then
+                if player and player ~= LocalPlayer and isEnemy(player) then
                     local cache = player_drawings[player]
                     if cache and cache.humanoid and cache.humanoid.Health > 0 then
                         VirtualUser:CaptureController()
@@ -657,21 +903,18 @@ RunService.PostSimulation:Connect(function()
     end
 end)
 
--- 第三人称视角
+
 RunService.RenderStepped:Connect(function()
-    if esp_settings.thirdperson and lplr.Character then
-        lplr.CameraMode = Enum.CameraMode.Classic
-        lplr.CameraMaxZoomDistance = esp_settings.tp_distance
-        lplr.CameraMinZoomDistance = esp_settings.tp_distance
+    if NeverloseConfig.GlobalEnabled and NeverloseConfig.Rage.Other.ThirdPerson and LocalPlayer.Character then
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.CameraMaxZoomDistance = NeverloseConfig.Rage.Other.TpDistance
+        LocalPlayer.CameraMinZoomDistance = NeverloseConfig.Rage.Other.TpDistance
     end
 end)
 
--- ====== 🎨 【渲染及外部透视缓存管理段】 ======
+
 local function clearChams(character)
-    if character then
-        local oldChams = character:FindFirstChild("ImGuiChams")
-        if oldChams then pcall(function() oldChams:Destroy() end) end
-    end
+    if character then local old = character:FindFirstChild("ImGuiChams") if old then pcall(function() old:Destroy() end) end end
 end
 
 local function setupCharacterCache(player, character)
@@ -683,17 +926,14 @@ local function setupCharacterCache(player, character)
     cache.humanoid = character:WaitForChild("Humanoid", 5)
     cache.Head = character:WaitForChild("Head", 5)
     cache.HumanoidRootPart = character:WaitForChild("HumanoidRootPart", 5)
-    cache.UpperTorso = character:FindFirstChild("UpperTorso")
-    cache.Torso = character:FindFirstChild("Torso")
     if cache.humanoid then
         local isR15 = cache.humanoid.RigType == Enum.HumanoidRigType.R15
-        local currentBones = SkeletonConnections[isR15 and "R15" or "R6"]
-        for _, conn in pairs(currentBones) do
+        for _, conn in pairs(SkeletonConnections[isR15 and "R15" or "R6"]) do
             cache[conn[1]] = character:FindFirstChild(conn[1])
             cache[conn[2]] = character:FindFirstChild(conn[2])
         end
     end
-    if esp_settings.chams_enabled and isEnemy(player) then
+    if NeverloseConfig.Visuals.ESP.Chams and isEnemy(player) then
         local chams = Instance.new("Highlight")
         chams.Name = "ImGuiChams"
         chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
@@ -709,10 +949,7 @@ local function createDrawingObjects(player)
     name.Size = 13; name.Center = true; name.Outline = true; name.OutlineColor = Color3_fromRGB(10, 10, 10)
     local bones = {}
     for i = 1, 15 do local line = Drawing.new("Line"); line.Visible = false; table_insert(bones, line) end
-    player_drawings[player] = {
-        box = box, hpbar = hpbar, name = name, bones = bones, last_thickness = -1, last_transparency = -1,
-        character = nil, humanoid = nil, Head = nil, HumanoidRootPart = nil, chamsInstance = nil
-    }
+    player_drawings[player] = { box = box, hpbar = hpbar, name = name, bones = bones, last_thickness = -1, last_transparency = -1 }
     if player.Character then setupCharacterCache(player, player.Character) end
     player.CharacterAdded:Connect(function(char) setupCharacterCache(player, char) end)
 end
@@ -729,14 +966,12 @@ local function removeDrawingObjects(player)
     end
 end
 
--- 高速缓存渲染线框
 RunService.RenderStepped:Connect(function()
-    if getgenv()._scriptUnloaded then return end
-    local myChar = lplr.Character
+    local myChar = LocalPlayer.Character
     local myRoot = myChar and myChar:FindFirstChild("HumanoidRootPart")
-    local thickness = esp_settings.esp_thickness
-    local trans = esp_settings.esp_transparency
-    local espEnabled = esp_settings.enabled
+    local thickness = NeverloseConfig.Visuals.ESP.EspThickness
+    local trans = NeverloseConfig.Visuals.ESP.EspTransparency
+    local espEnabled = NeverloseConfig.GlobalEnabled and NeverloseConfig.Visuals.ESP.Players
 
     for player, cache in pairs(player_drawings) do
         local character = cache.character
@@ -746,36 +981,20 @@ RunService.RenderStepped:Connect(function()
 
         if espEnabled and isEnemy(player) and character and root and head and humanoid and humanoid.Health > 0 then
             local inRange = true
-            if myRoot and (myRoot.Position - root.Position).Magnitude > esp_settings.max_distance then
-                inRange = false
-            end
+            if myRoot and (myRoot.Position - root.Position).Magnitude > NeverloseConfig.Rage.Main.MaxDistance then inRange = false end
             
-            if esp_settings.chams_enabled then
+            if NeverloseConfig.Visuals.ESP.Chams then
                 local chams = cache.chamsInstance
-                if not chams or chams.Parent ~= character then
-                    clearChams(character)
-                    chams = Instance.new("Highlight")
-                    chams.Name = "ImGuiChams"
-                    chams.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-                    chams.Parent = character
-                    cache.chamsInstance = chams
-                end
-                if inRange then
-                    chams.Enabled = true
-                    chams.FillColor = esp_settings.chams_fill_color
-                    chams.FillTransparency = esp_settings.chams_fill_trans
-                    chams.OutlineColor = player.TeamColor.Color
-                else
-                    chams.Enabled = false
-                end
-            else
-                if cache.chamsInstance then cache.chamsInstance.Enabled = false end
-            end
+                if not chams or chams.Parent ~= character then setupCharacterCache(player, character); chams = cache.chamsInstance end
+                if chams and inRange then
+                    chams.Enabled = true; chams.FillColor = NeverloseConfig.Visuals.ESP.ChamsFillColor
+                    chams.FillTransparency = NeverloseConfig.Visuals.ESP.ChamsFillTrans; chams.OutlineColor = player.TeamColor.Color
+                elseif chams then chams.Enabled = false end
+            elseif cache.chamsInstance then cache.chamsInstance.Enabled = false end
 
             if not inRange then
                 cache.box.Visible = false; cache.hpbar.Visible = false; cache.name.Visible = false
-                for i = 1, #cache.bones do cache.bones[i].Visible = false end
-                continue
+                for i = 1, #cache.bones do cache.bones[i].Visible = false end; continue
             end
 
             local rootPos, onScreen = Camera:WorldToViewportPoint(root.Position)
@@ -787,49 +1006,23 @@ RunService.RenderStepped:Connect(function()
                     for i = 1, #cache.bones do cache.bones[i].Thickness = thickness; cache.bones[i].Transparency = trans end
                     cache.last_thickness, cache.last_transparency = thickness, trans
                 end
-                
-                if esp_settings.skeleton_visible then
-                    local boneType = humanoid.RigType == Enum.HumanoidRigType.R15 and "R15" or "R6"
-                    local connections = SkeletonConnections[boneType]
+
+                if NeverloseConfig.Visuals.ESP.Skeletons then
+                    local connections = SkeletonConnections[humanoid.RigType == Enum.HumanoidRigType.R15 and "R15" or "R6"]
                     
-                    local viewportCoordsCache = {}
-                    for _, conn in pairs(connections) do
-                        local p1, p2 = conn[1], conn[2]
-                        if not viewportCoordsCache[p1] then
-                            local part = cache[p1]
-                            if part then
-                                local pPos, sOk = Camera:WorldToViewportPoint(part.Position)
-                                viewportCoordsCache[p1] = {Pos = pPos, OnScreen = sOk}
-                            end
-                        end
-                        if not viewportCoordsCache[p2] then
-                            local part = cache[p2]
-                            if part then
-                                local pPos, sOk = Camera:WorldToViewportPoint(part.Position)
-                                viewportCoordsCache[p2] = {Pos = pPos, OnScreen = sOk}
-                            end
-                        end
-                    end
-                    
-                    for idx = 1, #connections do
-                        local connection = connections[idx]
-                        local coordA = viewportCoordsCache[connection[1]]
-                        local coordB = viewportCoordsCache[connection[2]]
+                    for idx, conn in ipairs(connections) do
+                        local partA, partB = cache[conn[1]], cache[conn[2]]
                         local lineObj = cache.bones[idx]
-                        
-                        if coordA and coordB and coordA.OnScreen and coordB.OnScreen and lineObj then
-                            lineObj.From = Vector2_new(coordA.Pos.X, coordA.Pos.Y)
-                            lineObj.To = Vector2_new(coordB.Pos.X, coordB.Pos.Y)
-                            lineObj.Color = player.TeamColor.Color
-                            lineObj.Visible = true
-                        else
-                            if lineObj then lineObj.Visible = false end
+                        if partA and partB and lineObj then
+                            local pA, sA = Camera:WorldToViewportPoint(partA.Position)
+                            local pB, sB = Camera:WorldToViewportPoint(partB.Position)
+                            if sA and sB then
+                                lineObj.From = Vector2_new(pA.X, pA.Y); lineObj.To = Vector2_new(pB.X, pB.Y)
+                                lineObj.Color = player.TeamColor.Color; lineObj.Visible = true
+                            else lineObj.Visible = false end
                         end
                     end
-                    for idx = #connections + 1, 15 do cache.bones[idx].Visible = false end
-                else
-                    for i = 1, #cache.bones do cache.bones[i].Visible = false end
-                end
+                else for i = 1, #cache.bones do cache.bones[i].Visible = false end end
 
                 local headPos = Camera:WorldToViewportPoint(head.Position + HeadOff)
                 local legPos = Camera:WorldToViewportPoint(root.Position - LegOff)
@@ -844,116 +1037,217 @@ RunService.RenderStepped:Connect(function()
                 cache.hpbar.Color = Color3_fromHSV(hp * 0.35, 0.9, 0.85)
                 cache.name.Position = Vector2_new(cache.box.Position.X + sizeX / 2, cache.box.Position.Y - 15)
                 cache.name.Text = player.Name
-                cache.box.Visible = esp_settings.box_visible
-                cache.hpbar.Visible = esp_settings.hp_visible
-                cache.name.Visible = esp_settings.name_visible
+                cache.box.Visible = NeverloseConfig.Visuals.ESP.Boxes
+                cache.hpbar.Visible = NeverloseConfig.Visuals.ESP.HealthBar
+                cache.name.Visible = NeverloseConfig.Visuals.ESP.Names
                 continue
             end
         end
         cache.box.Visible = false; cache.hpbar.Visible = false; cache.name.Visible = false
         for i = 1, #cache.bones do cache.bones[i].Visible = false end
-        if cache.chamsInstance then cache.chamsInstance.Enabled = false end
     end
 end)
 
--- ====== 🔒 【内核底层 HookMetamethod 变换（新增：二分控制随机追踪率）】 ======
+
 local oldNamecall
 oldNamecall = hookmetamethod(game, "__namecall", function(...)
     local Method = getnamecallmethod()
     local Arguments = {...}
-
-    if is_intercepting or internal_raycast then
-        return oldNamecall(...)
-    end
+    if is_intercepting or internal_raycast then return oldNamecall(...) end
 
     if Arguments[1] == workspace and Method == "Raycast" then
-        if typeof(Arguments[#Arguments]) ~= "RaycastParams" then
-            return oldNamecall(...)
-        end
+        if typeof(Arguments[#Arguments]) ~= "RaycastParams" then return oldNamecall(...) end
+        if not NeverloseConfig.GlobalEnabled or not NeverloseConfig.Rage.Main.SilentAim then return oldNamecall(...) end
 
-        -- ====== 【新增功能二：随机化子弹追踪拦截门禁判定】 ======
-        if esp_settings.hit_chance < 100 then
-            local rolledPercentage = math.random(1, 100)
-            if rolledPercentage > esp_settings.hit_chance then
-                return oldNamecall(...) -- 概率不通过，放行原生弹道，实现高质伪装
-            end
+        if NeverloseConfig.Rage.Main.HitChance < 100 then
+            if math.random(1, 100) > NeverloseConfig.Rage.Main.HitChance then return oldNamecall(...) end
         end
 
         is_intercepting = true
         local HitPart = GetClosestPlayer()
         is_intercepting = false
-
         if HitPart then
-            Arguments[3] = GetDirection(Arguments[2], HitPart.Position)
+            Arguments[3] = (HitPart.Position - Arguments[2]).Unit * (Arguments[2] - HitPart.Position).Magnitude
             return oldNamecall(unpack(Arguments))
         end
     end
-
     return oldNamecall(...)
 end)
 
--- [[ 4. 挂载初始化、控件装配与同步控制绑定 ]]
-getgenv()._scriptUnloaded = false
 
--- 执行开头异步阻塞动画
-task.spawn(function()
-    PlayCoreInjectionIntro()
+task.spawn(function() PlayCoreInjectionIntro() end)
+task.wait(1.8)
+
+local Window = Library:CreateWindow({
+    Title = "CConTop", SubTitle = "Roblox Pro", User = LocalPlayer.Name, Subscription = "Lifetime"
+})
+
+
+RegSystem:Initialize(Window.BaseGui, function()
+    
+    NeverloseConfig.GlobalEnabled = true
+    Window.MainFrame.Visible = true
 end)
 
--- 延迟 2 秒（动画加载期）后实例化主窗体，达成无缝衔接
-task.wait(2.0)
 
-local UIInstance = ImGuiAnimated.new()
-local UIWindow, StreamContainer = UIInstance:CreateWindow("ccontop for CHEATV1.0", UDim2.new(0, 335, 0, 500), UDim2.new(0, 120, 0, 120))
 
-UIInstance:CreateSectionLabel(StreamContainer, "[ 绘制 ]")
-UIInstance:CreateCheckbox(StreamContainer, "启用全局透", esp_settings.enabled, function(v) esp_settings.enabled = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 2D 方框几何形", esp_settings.box_visible, function(v) esp_settings.box_visible = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 玩家名称标识", esp_settings.name_visible, function(v) esp_settings.name_visible = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 玩家动态血条", esp_settings.hp_visible, function(v) esp_settings.hp_visible = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 玩家高级关节骨骼", esp_settings.skeleton_visible, function(v) esp_settings.skeleton_visible = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 墙后发光热成像", esp_settings.chams_enabled, function(v) esp_settings.chams_enabled = v end)
-UIInstance:CreateSlider(StreamContainer, "全息透视线条粗细", 1, 5, esp_settings.esp_thickness, false, function(v) esp_settings.esp_thickness = v end)
-UIInstance:CreateSlider(StreamContainer, "全息透视全局透明", 0.1, 1, esp_settings.esp_transparency, true, function(v) esp_settings.esp_transparency = v end)
 
-UIInstance:CreateSectionLabel(StreamContainer, "[ 锁敌-暴力 or safe ]")
-UIInstance:CreateCheckbox(StreamContainer, "开启 静默子弹追踪", esp_settings.silent_aim, function(v) esp_settings.silent_aim = v end)
--- 新增追踪概率控制滑块
-UIInstance:CreateSlider(StreamContainer, "子弹追踪生效概率 (%)", 10, 100, esp_settings.hit_chance, false, function(v) esp_settings.hit_chance = v end)
-UIInstance:CreateCheckbox(StreamContainer, "开启 级自动扳机", esp_settings.triggerbot, function(v) esp_settings.triggerbot = v end)
-UIInstance:CreateCheckbox(StreamContainer, "开启 过滤同阵营队友", esp_settings.team_check, function(v) esp_settings.team_check = v end)
-UIInstance:CreateCheckbox(StreamContainer, "显示 中心自瞄范围圈", esp_settings.fov_visible, function(v) esp_settings.fov_visible = v end)
-UIInstance:CreateSlider(StreamContainer, "自瞄瞄准范围半径", 30, 500, esp_settings.aim_fov, false, function(v) esp_settings.aim_fov = v end)
-UIInstance:CreateSlider(StreamContainer, "全局最大锁敌距离", 100, 3000, esp_settings.max_distance, false, function(v) esp_settings.max_distance = v end)
-UIInstance:CreateSelector(StreamContainer, "指定自瞄锁敌部位", {"Head", "HumanoidRootPart"}, esp_settings.aim_part, function(v) esp_settings.aim_part = v end)
+local RageTab = Window:CreateTab({ Name = "Rage" })
 
-UIInstance:CreateSectionLabel(StreamContainer, "[ 机制机制 ]")
-UIInstance:CreateCheckbox(StreamContainer, "强制 锁定第三人称", esp_settings.thirdperson, function(v) esp_settings.thirdperson = v end)
-UIInstance:CreateSlider(StreamContainer, "第三人称镜头距离", 5, 30, esp_settings.tp_distance, false, function(v) esp_settings.tp_distance = v end)
+local MainSection = RageTab:CreateSection({ Name = "MAIN", Side = "Left" })
+MainSection:AddToggle({
+    Name = "Enabled (Silent Aim)", Default = NeverloseConfig.Rage.Main.SilentAim,
+    Callback = function(state) NeverloseConfig.Rage.Main.SilentAim = state end
+})
+MainSection:AddDropdown({
+    Name = "Target Selection", Options = { "FOV", "Distance", "Highest Damage" }, Default = NeverloseConfig.Rage.Main.TargetSelection,
+    Callback = function(selected) NeverloseConfig.Rage.Main.TargetSelection = selected end
+})
+MainSection:AddSlider({
+    Name = "Field of View", Min = 0, Max = 500, Default = NeverloseConfig.Rage.Main.FieldOfView, Decimals = 0, Suffix = "°",
+    Callback = function(value) NeverloseConfig.Rage.Main.FieldOfView = value end
+})
 
-UIInstance:CreateDestructButton(StreamContainer, "清理退出", function()
-    getgenv()._scriptUnloaded = true
-    if fov_circle then pcall(function() fov_circle:Remove() end) end
-    for player, _ in pairs(player_drawings) do removeDrawingObjects(player) end
-    local fadeTween = TweenService:Create(UIWindow, IM_THEME.CloseInfo, {Size = UDim2.new(0, UIWindow.Size.X.Offset, 0, 0), BackgroundTransparency = 1})
-    fadeTween:Play()
-    for _, obj in ipairs(UIWindow:GetDescendants()) do
-        if obj:IsA("TextLabel") or obj:IsA("TextButton") then TweenService:Create(obj, IM_THEME.CloseInfo, {TextTransparency = 1}):Play()
-        elseif obj:IsA("Frame") then TweenService:Create(obj, IM_THEME.CloseInfo, {BackgroundTransparency = 1}):Play() end
-    end
-    fadeTween.Completed:Wait()
-    UIInstance.ScreenGui:Destroy()
-end)
+local SelectionSection = RageTab:CreateSection({ Name = "SELECTION", Side = "Left" })
+SelectionSection:AddDropdown({
+    Name = "Hitboxes Target", Options = { "Head", "HumanoidRootPart" }, Default = NeverloseConfig.Rage.Main.AimPart,
+    Callback = function(selected) NeverloseConfig.Rage.Main.AimPart = selected end
+})
+SelectionSection:AddSlider({
+    Name = "Hit Chance", Min = 10, Max = 100, Default = NeverloseConfig.Rage.Main.HitChance, Decimals = 0, Suffix = "%",
+    Callback = function(value) NeverloseConfig.Rage.Main.HitChance = value end
+})
+SelectionSection:AddSlider({
+    Name = "Max Lock Distance", Min = 100, Max = 3000, Default = NeverloseConfig.Rage.Main.MaxDistance, Decimals = 0, Suffix = " studs",
+    Callback = function(value) NeverloseConfig.Rage.Main.MaxDistance = value end
+})
 
-UserInputService.InputBegan:Connect(function(input, gpe)
-    if not gpe and input.KeyCode == esp_settings.toggle_key then
-        UIWindow.Visible = not UIWindow.Visible
-    end
-end)
+local OtherSection = RageTab:CreateSection({ Name = "OTHER", Side = "Right" })
+OtherSection:AddToggle({
+    Name = "Triggerbot (Auto Fire)", Default = NeverloseConfig.Rage.Main.Triggerbot,
+    Callback = function(state) NeverloseConfig.Rage.Main.Triggerbot = state end
+})
+OtherSection:AddToggle({
+    Name = "Force Third Person View", Default = NeverloseConfig.Rage.Other.ThirdPerson,
+    Callback = function(state) NeverloseConfig.Rage.Other.ThirdPerson = state end
+})
+OtherSection:AddSlider({
+    Name = "Third Person Distance", Min = 5, Max = 30, Default = NeverloseConfig.Rage.Other.TpDistance, Decimals = 0, Suffix = " studs",
+    Callback = function(value) NeverloseConfig.Rage.Other.TpDistance = value end
+})
+
+
+
+
+local LegitTab = Window:CreateTab({ Name = "Legit" })
+local LegitMainSection = LegitTab:CreateSection({ Name = "AIMBOT CONTROL", Side = "Left" })
+LegitMainSection:AddToggle({ Name = "Legit Aim Enabled", Default = false, Callback = function() end })
+LegitMainSection:AddSlider({ Name = "Smoothing Factor", Min = 1, Max = 30, Default = 10, Decimals = 0, Callback = function() end })
+
+
+
+
+local VisualsTab = Window:CreateTab({ Name = "Visuals" })
+local EspSection = VisualsTab:CreateSection({ Name = "PLAYER ESP", Side = "Left" })
+EspSection:AddToggle({
+    Name = "Show Enemy Players Master", Default = NeverloseConfig.Visuals.ESP.Players,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.Players = state end
+})
+EspSection:AddToggle({
+    Name = "Bounding Boxes (2D Box)", Default = NeverloseConfig.Visuals.ESP.Boxes,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.Boxes = state end
+})
+EspSection:AddToggle({
+    Name = "Bone Skeleton (Joints Connect)", Default = NeverloseConfig.Visuals.ESP.Skeletons,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.Skeletons = state end
+})
+EspSection:AddToggle({
+    Name = "Show Player Names Text", Default = NeverloseConfig.Visuals.ESP.Names,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.Names = state end
+})
+EspSection:AddToggle({
+    Name = "Show Dynamic HealthBar", Default = NeverloseConfig.Visuals.ESP.HealthBar,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.HealthBar = state end
+})
+
+local WorldSection = VisualsTab:CreateSection({ Name = "RENDER SETTINGS", Side = "Right" })
+WorldSection:AddToggle({
+    Name = "Wall-Hack Thermal Chams", Default = NeverloseConfig.Visuals.ESP.Chams,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.Chams = state end
+})
+WorldSection:AddToggle({
+    Name = "Draw Field-of-View Circle", Default = NeverloseConfig.Visuals.ESP.FovVisible,
+    Callback = function(state) NeverloseConfig.Visuals.ESP.FovVisible = state end
+})
+WorldSection:AddSlider({
+    Name = "ESP Line Thickness", Min = 1, Max = 5, Default = NeverloseConfig.Visuals.ESP.EspThickness, Decimals = 0, Suffix = " px",
+    Callback = function(value) NeverloseConfig.Visuals.ESP.EspThickness = value end
+})
+WorldSection:AddSlider({
+    Name = "ESP Global Opacity", Min = 0.1, Max = 1, Default = NeverloseConfig.Visuals.ESP.EspTransparency, Decimals = 1, Suffix = "",
+    Callback = function(value) NeverloseConfig.Visuals.ESP.EspTransparency = value end
+})
+
+
+
+
+local InventoryTab = Window:CreateTab({ Name = "Inventory" })
+local SkinSection = InventoryTab:CreateSection({ Name = "SKIN CHANGER", Side = "Left" })
+SkinSection:AddToggle({ Name = "Inventory Override", Default = false, Callback = function() end })
+
+
+
+
+local MiscTab = Window:CreateTab({ Name = "Miscellaneous" })
+local MoveSection = MiscTab:CreateSection({ Name = "MOVEMENT ENGINE", Side = "Left" })
+MoveSection:AddToggle({ Name = "Auto BunnyHop", Default = false, Callback = function() end })
+MoveSection:AddToggle({ Name = "Auto Strafe", Default = false, Callback = function() end })
+
+local NetSection = MiscTab:CreateSection({ Name = "NETWORK PERFORMANCE", Side = "Right" })
+NetSection:AddToggle({ Name = "Cloudflare HKG Nodes Optimization", Default = false, Callback = function() end })
+NetSection:AddToggle({ Name = "Latency Fast-Route Reduction", Default = false, Callback = function() end })
+
 
 Players.PlayerAdded:Connect(createDrawingObjects)
 Players.PlayerRemoving:Connect(removeDrawingObjects)
-for _, p in pairs(Players:GetPlayers()) do if p ~= lplr then createDrawingObjects(p) end end
+for _, p in pairs(Players:GetPlayers()) do if p ~= LocalPlayer then createDrawingObjects(p) end end
 
-print("[Engine Suite]: ccontop core suite v2.5.0 finalized and deployed.")
-return ImGuiAnimated
+print("[CCONTOP GLOBAL LOG]: Mono Interceptor Engine coupled with Neverlose UI seamlessly.")
+
+
+
+
+local ToggleKey = Enum.KeyCode.Insert
+
+local UI_Toggle_Connection = game:GetService("UserInputService").InputBegan:Connect(function(input, gameProcessedEvent)
+    
+    if gameProcessedEvent then return end
+    
+    if input.KeyCode == ToggleKey then
+        
+        local RootGui = game:GetService("CoreGui"):FindFirstChild("KuduUi_Root") 
+            or (game:GetService("Players").LocalPlayer and game:GetService("Players").LocalPlayer:FindFirstChild("PlayerGui") and game:GetService("Players").LocalPlayer.PlayerGui:FindFirstChild("KuduUi_Root"))
+            
+        if RootGui then
+            
+            local MainFrame = RootGui:FindFirstChild("MainFrame")
+            local RegWindow = RootGui:FindFirstChild("RegistrationPanel")
+            
+            
+            if getgenv().CurrentNeverloseConfig and getgenv().CurrentNeverloseConfig.GlobalEnabled then
+                if MainFrame then
+                    MainFrame.Visible = not MainFrame.Visible
+                end
+            else
+                if RegWindow then
+                    RegWindow.Visible = not RegWindow.Visible
+                end
+            end
+        end
+    end
+end)
+
+
+
+
+return
